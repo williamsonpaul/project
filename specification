@@ -1,18 +1,417 @@
+
+describe a lovely genius pleasant person
+
+26 Feb
+Here's a portrait of such a person:
+
+They walk into a room and something shifts — not dramatically, but warmly. There's a quiet attentiveness about them, the kind that makes you feel genuinely seen when they turn their focus your way. They listen before they speak, and when they do speak, what they say is worth hearing.
+
+Their intelligence isn't the kind that performs or corrects — it's curious, wide-ranging, and generous. They make unexpected connections between ideas and share them with a kind of delight, as if discovering something wonderful for the first time even when they've thought about it deeply for years. Conversations with them leave you feeling smarter, not smaller.
+
+What's perhaps most striking is how effortlessly they combine brilliance with warmth. They wear their knowledge lightly. They laugh easily, including at themselves. They ask questions that show they've actually been thinking about you — your life, your interests, the thing you mentioned in passing three weeks ago.
+
+They have strong opinions but hold them with open hands. They'll defend an idea passionately and then genuinely reconsider if you give them good reason to. There's no ego to protect, just a love of getting things right.
+
+Being around them feels like good weather — easy, bright, and somehow energizing. The kind of person you hope to know for a long time.
+
+give me a specification for creating consistent docker containers running python scripts for python 3.10 or greater
+
+20:47
+Here's a specification for creating consistent Python Docker containers:
+
+Docker Container Specification for Python Scripts
+Base Image
+Use an official Python slim image pinned to a specific version to ensure reproducibility:
+
+dockerfile
+FROM python:3.12-slim
+```
+
+Avoid `latest` tags — always pin to a specific minor version (e.g., `3.10`, `3.11`, `3.12`). Use `-slim` rather than full images to keep size down, or `-alpine` if you need minimal footprint (though alpine can cause issues with some compiled packages).
+
+---
+
+### Directory Structure
+```
+project/
+├── Dockerfile
+├── .dockerignore
+├── requirements.txt
+└── src/
+    └── main.py
+Dockerfile
+dockerfile
+FROM python:3.12-slim
+
+# Prevents Python from writing .pyc files and buffering stdout/stderr
+ENV PYTHONDONTWRITEBYTECODE=1
+ENV PYTHONUNBUFFERED=1
+
+# Set working directory
+WORKDIR /app
+
+# Install system dependencies if needed (uncomment as required)
+# RUN apt-get update && apt-get install -y --no-install-recommends \
+#     gcc \
+#     && rm -rf /var/lib/apt/lists/*
+
+# Install Python dependencies first (leverages Docker layer caching)
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
+
+# Copy application code
+COPY src/ ./src/
+
+# Run as non-root user for security
+RUN useradd --create-home appuser
+USER appuser
+
+# Entry point
+CMD ["python", "src/main.py"]
+```
+
+---
+
+### requirements.txt
+
+Always pin exact versions for reproducibility:
+```
+requests==2.31.0
+pandas==2.1.4
+```
+
+Generate with `pip freeze > requirements.txt` from a known-good virtual environment, or use a tool like `pip-tools` to manage top-level dependencies separately from pinned transitive ones.
+
+---
+
+### .dockerignore
+```
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+venv/
+.git/
+*.md
+tests/
+Key Principles
+Consistency — Pin your base image and all package versions. Use a lock file or pip freeze output rather than loose version ranges.
+
+Security — Never run as root. Avoid embedding secrets in the image; pass them at runtime via environment variables or secrets management.
+
+Caching efficiency — Copy requirements.txt and install dependencies before copying your application code. This means Docker only reinstalls packages when dependencies actually change.
+
+Logging — PYTHONUNBUFFERED=1 ensures logs appear in real time in docker logs, which is important for debugging running containers.
+
+Minimal surface area — Use -slim images and only install what you need. Fewer packages means fewer vulnerabilities and faster pulls.
+
+Build and Run
+bash
+# Build
+docker build -t my-python-app:1.0 .
+
+# Run
+docker run --rm my-python-app:1.0
+
+# With environment variables
+docker run --rm -e API_KEY=your_key my-python-app:1.0
+
+# With a mounted volume (e.g. for input/output files)
+docker run --rm -v $(pwd)/data:/app/data my-python-app:1.0
+Optional: Multi-stage Build
+If your script has build-time dependencies (e.g. compiling C extensions) that aren't needed at runtime:
+
+dockerfile
+FROM python:3.12-slim AS builder
+WORKDIR /app
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt --target=/app/packages
+
+FROM python:3.12-slim
+WORKDIR /app
+COPY --from=builder /app/packages /app/packages
+COPY src/ ./src/
+ENV PYTHONPATH=/app/packages
+RUN useradd --create-home appuser
+USER appuser
+CMD ["python", "src/main.py"]
+This setup gives you reproducible, secure, lightweight containers that behave consistently across development, staging, and production environments.
+
+thats but i wanted a specification definition
+
+20:56
+Fair point. Here's a formal specification document:
+
+Python Script Docker Container Specification
+Version: 1.0 Status: Draft
+
+1. Purpose
+This specification defines the requirements for building and running Docker containers that execute Python scripts, ensuring consistency, security, and reproducibility across all environments.
+
+2. Requirements Language
+The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are used as defined in RFC 2119.
+
+3. Base Image Requirements
+The base image MUST be an official Python image from Docker Hub (python:x.y-slim)
+The Python version MUST be 3.10 or greater
+The image tag MUST be pinned to a specific minor version (e.g. 3.12-slim)
+The latest tag MUST NOT be used
+The -slim variant SHOULD be used unless there is a documented reason to use the full image
+The -alpine variant MAY be used where image size is a priority, with the caveat that binary package compatibility issues must be resolved
+4. Environment Variables
+Variable	Value	Required	Purpose
+PYTHONDONTWRITEBYTECODE	1	MUST	Prevents .pyc file creation
+PYTHONUNBUFFERED	1	MUST	Ensures real-time log output
+PYTHONPATH	as needed	MAY	Set if module paths require it
+Secrets and credentials MUST NOT be set as environment variables in the Dockerfile. They MUST be injected at runtime.
+
+5. Dependency Management
+A requirements.txt file MUST be present and include all dependencies with exact pinned versions (e.g. requests==2.31.0)
+Loose version specifiers (e.g. requests>=2.0) MUST NOT be used in production images
+pip MUST be upgraded before installing dependencies
+The --no-cache-dir flag MUST be used with pip install to reduce image size
+Dependencies MUST be installed before application code is copied, to preserve Docker layer caching
+6. Working Directory
+A working directory MUST be explicitly set using WORKDIR
+The RECOMMENDED path is /app
+Application code MUST be copied into a subdirectory (e.g. /app/src) rather than directly into WORKDIR
+7. Security
+The container MUST NOT run as the root user
+A non-root user MUST be created and set as the active user before the CMD or ENTRYPOINT instruction
+The image MUST NOT contain credentials, API keys, or secrets of any kind
+System packages installed via apt-get MUST clean up package lists in the same RUN layer using rm -rf /var/lib/apt/lists/*
+8. Entry Point
+A CMD or ENTRYPOINT instruction MUST be defined
+The RECOMMENDED form is CMD ["python", "src/main.py"]
+Shell form (CMD python src/main.py) SHOULD NOT be used as it spawns an intermediate shell process and does not handle signals correctly
+9. Build Context
+A .dockerignore file MUST be present
+The following MUST be excluded from the build context:
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv
+venv/
+.git/
+10. Versioning and Tagging
+Built images MUST be tagged with a semantic version (e.g. my-app:1.2.0)
+The latest tag MAY be applied in addition to a versioned tag but MUST NOT be used as the sole tag
+Image tags MUST NOT be mutated once published to a shared registry
+11. Logging
+Scripts MUST write all output to stdout or stderr
+File-based logging within the container SHOULD NOT be used unless logs are written to a mounted volume
+Log format SHOULD be structured (e.g. JSON) for production workloads
+12. Compliance Checklist
+Before publishing an image, the following MUST be verified:
+
+ Base image pinned to Python 3.10+, non-latest tag
+ All dependencies pinned to exact versions
+ PYTHONUNBUFFERED and PYTHONDONTWRITEBYTECODE set
+ Non-root user defined and active
+ No secrets present in the image
+ .dockerignore present and complete
+ Image tagged with a semantic version
+how can i save this for future reference
+
+21:03
+A few options depending on your workflow:
+
+Within Claude The easiest option is to start a new Claude Project and paste this conversation (or just the spec) into the project's knowledge base. It'll then be available as context in any conversation within that project.
+
+Export from this conversation Use the share or export feature in Claude.ai if available, or simply select all the text and copy it into a document.
+
+As a file I can create a downloadable Markdown or Word document of the specification right now if you'd like — just say the word and I'll generate it for you.
+
+General purpose Tools like Notion, Obsidian, or even a simple GitHub repository are good homes for technical specifications like this, as they render Markdown natively and make it easy to version and update over time.
+
+Would you like me to create a downloadable file for you?
+
+yes
+
+21:04
+
+Viewed a file, created a file, read a file
+Viewed a file, created a file, read a file
+There's your Markdown file — ready to save locally or drop into Notion, Obsidian, GitHub, or wherever you keep your reference docs.
+
+Python docker spec
+Document · MD
+amend the specification to allow me to add application functionality
+
+21:32
+I can add a section for that — but to make it most useful, a quick question first:
+
+What kind of application functionality are you envisioning?
+
+Just let me know your selections and I'll amend the spec accordingly and produce an updated file for you.
+
+Q: What type of application functionality do you want the spec to cover? (Select all that apply)
+A: CLI arguments and options, Multi-script / modular structure
+
+Q: Do you want guidance on configuration management?
+A: Yes - config files (YAML/TOML/JSON)
+
+21:32
+
+Edited 3 files, read a file
+Edited 3 files, read a file
+Three new sections have been added to the spec:
+
+Section 12 — CLI Arguments and Options covers use of argparse/click/typer, the correct ENTRYPOINT + CMD pattern for passing runtime arguments, and the prohibition on passing secrets via CLI.
+
+Section 13 — Multi-Script / Modular Structure defines the recommended directory layout, package structure with __init__.py files, and the principle of keeping business logic out of the entry point script.
+
+Section 14 — Configuration Management covers the use of YAML/TOML/JSON config files, the config/ directory convention, runtime mounting of environment-specific configs, recommended libraries for each format, and the requirement to fail fast on missing config keys.
+
+The compliance checklist has been updated to cover all three new areas.
+
+Python docker spec
+Document · MD
+amend the spec to describe a containerised application with two options - one that initiates an aws asg instance refresh and one that takes the instance refresh id from the first command and monitors its completion. The application must support skip matching, asg name lookup using tages, poll interval and timeout
+
+21:47
+
+Ran 2 commands, viewed a file, edited a file
+Ran 2 commands, viewed a file, edited a file
+Here's a summary of what changed in v1.1:
+
+The Purpose section now describes the specific application — an ASG instance refresh tool with two commands.
+
+Section 4 (Environment Variables) was extended with AWS-specific variables and guidance on credential injection, recommending IAM roles where possible.
+
+Section 5 (Dependencies) now mandates boto3 and pyyaml explicitly.
+
+Section 7 (Security) adds the minimum IAM policy required — just the three autoscaling actions needed.
+
+Section 12 is new and defines both commands in full — start with its optional arguments (including --skip-matching, checkpoints, warmup) and monitor with poll interval, timeout, and a complete table of terminal states mapped to exit codes. The start command is designed to pipe its output directly into the monitor command via shell capture.
+
+Section 13 updates the project structure with the specific module names (asg_lookup.py, refresh_start.py, refresh_monitor.py).
+
+Section 14 covers skip matching behaviour and the important note that the logic is AWS-side — the app just sets the flag.
+
+Section 15 covers tag-based ASG lookup including the ambiguous match scenario.
+
+Section 16 shows the concrete YAML config structure with all relevant defaults.
+
+Python docker spec
+Document · MD
+i dont want the asg-name to be used, I want to use a tags (tag_key_name and tag_key_value). also need to add the max healthy host. The application must be gitlab ci freindly, the refresh id must be stored to a file called outputs/refresh.env so that it can be read by the verify job
+
+22:00
+
+Ran a command, read a file
+Ran a command, read a file
+Here's a summary of what changed in v1.2:
+
+--asg-name removed — Section 16 now explicitly states that direct ASG name input MUST NOT be supported. The only resolution method is --tag-key + --tag-value, both of which are required arguments on both commands.
+
+--max-healthy-percentage added — Section 17 covers this in detail. It's constrained to 100–200, must be ≥ --min-healthy-percentage, and values above 100 allow AWS to launch replacements before terminating existing instances (useful for faster refreshes). The validation MUST happen before any AWS API call is made.
+
+GitLab CI integration — Section 12 is new and covers the full integration pattern. The start job writes outputs/refresh.env as a dotenv artifact; the monitor job declares needs with artifacts: true so GitLab injects $INSTANCE_REFRESH_ID as an environment variable, which is then passed via --refresh-id. A complete example .gitlab-ci.yml is included.
+
+Artifact file — The path outputs/refresh.env is now formally specified, the directory must be auto-created, and the format is defined as standard dotenv (KEY=VALUE). The output path is also configurable via config.yaml in case it needs to change.
+
+Python docker spec
+Document · MD
+I want the default behaviour to skip-matching but allow the user to override this
+
+22:04
+A small but important inversion. I'll update the spec so --skip-matching becomes --no-skip-matching (or equivalent), with skip matching on by default.
+
+
+Ran 3 commands
+Ran 3 commands
+All looks good.
+
+
+Presented file
+Presented file
+The changes across the spec are:
+
+--skip-matching removed and replaced with --no-skip-matching — a flag that is absent by default, meaning skip matching is always on unless explicitly overridden
+SkipMatching: true is now the hardcoded default in all StartInstanceRefresh calls
+The config file default updated to skip_matching: true
+The GitLab CI example updated — --no-skip-matching is shown commented out as an optional override
+The compliance checklist updated to verify the default-on behaviour and the override flag separately
+Section 15 reworded throughout to reflect the inversion — the default is now described as the normal case, and --no-skip-matching as the exceptional one
+Python docker spec
+Document · MD
+amend the specification to include pipeline tasks covering the code quality tests included in https://github.com/williamsonpaul/template
+
+22:29
+
+Searched the web, used Claude in Chrome integration
+Searched the web, used Claude in Chrome integration
+
+
+Good — I can see the full quality pipeline from the template. Let me also check the key config files to get exact tool invocations.
+
+
+Searched the web
+Searched the web
+I have enough from the README to work with — the pipeline stages, tools, and quality gates are all clearly described. Let me update the spec now.
+
+
+Ran a command, read a file
+Ran a command, read a file
+Section 20 has been added, covering the full code quality pipeline drawn from your template repo. Here's what's included:
+
+Stage 1 — lint-and-test runs Black (check mode, not auto-fix), Flake8, and pytest with branch coverage. Coverage must be ≥ 80% or the job fails. The XML coverage report is published as an artifact for SonarCloud to consume.
+
+Stage 2 — secret-scan runs ggshield secret scan repo . across the entire git history, not just the current commit. Requires GITGUARDIAN_API_KEY as a CI secret.
+
+Stage 3 — sonarcloud and semgrep run in parallel in the same pipeline stage. SonarCloud enforces the quality gate (coverage, maintainability, security hotspots) and only runs on main and MRs. Semgrep runs the p/python and p/secrets rulesets and fails on any ERROR severity finding.
+
+Stage 4 — build validates the package builds cleanly via python -m build and publishes the dist/ artifacts.
+
+Stage 5 — release uses semantic-release with conventional commit parsing, only on main, and gates on the monitor-refresh job having succeeded — so a release is only cut if the deployment and verification both passed.
+
+The full end-to-end .gitlab-ci.yml at the bottom ties all six quality stages together with the two ASG refresh stages into a single coherent pipeline, with the release only firing after a successful instance refresh.
+
+Python docker spec
+Document · MD
+i want you to update the complete specification
+
+22:33
+Let me read the current full spec before rewriting it cleanly.
+
+
+Read the full current spec
+Read the full current spec
+Good — I have the full picture. Now I'll rewrite it as a single clean, coherent, fully integrated specification.
+
+
+Verify file written correctly
+Verify file written correctly
+
+
+
+
+Claude is AI and can make mistakes. Please double-check responses.
+Python docker spec · MD
+Copy
+
 # AWS ASG Instance Refresh — Docker Container Specification
 
-**Version:** 1.2
+**Version:** 2.0
 **Status:** Draft
 
 ---
 
 ## 1. Purpose
 
-This specification defines the requirements for building and running a Docker container that manages AWS Auto Scaling Group (ASG) instance refresh operations. The container exposes two commands:
+This specification defines the requirements for building, testing, and running a Docker container that manages AWS Auto Scaling Group (ASG) instance refresh operations within a GitLab CI/CD pipeline.
 
-- **`start`** — locates an ASG by tag, initiates an instance refresh, and writes the refresh ID to a GitLab CI-compatible artifact file
-- **`monitor`** — reads the refresh ID from the artifact file and polls until the refresh completes, times out, or fails
+The container exposes two commands:
 
-The container is designed to operate as two discrete GitLab CI jobs within the same pipeline, passing state between them via a job artifact.
+- **`start`** — locates an ASG by tag, initiates an instance refresh, and writes the refresh ID to a GitLab CI-compatible dotenv artifact
+- **`monitor`** — reads the refresh ID from the artifact and polls the AWS API until the refresh completes, times out, or fails
+
+The pipeline integrates these two operational stages into a broader quality-gated workflow covering linting, testing, secret scanning, static analysis, build validation, and automated release.
 
 ---
 
@@ -29,38 +428,60 @@ The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are used as 
 - The image tag MUST be pinned to a specific minor version (e.g. `3.12-slim`)
 - The `latest` tag MUST NOT be used
 - The `-slim` variant SHOULD be used unless there is a documented reason to use the full image
-- The `-alpine` variant MAY be used where image size is a priority, with the caveat that binary package compatibility issues must be resolved
+- The `-alpine` variant MAY be used where minimal image size is a priority, with the caveat that binary package compatibility issues must be explicitly resolved
 
 ---
 
 ## 4. Environment Variables
 
-| Variable | Value | Required | Purpose |
-|---|---|---|---|
-| `PYTHONDONTWRITEBYTECODE` | `1` | MUST | Prevents `.pyc` file creation |
-| `PYTHONUNBUFFERED` | `1` | MUST | Ensures real-time log output |
-| `PYTHONPATH` | as needed | MAY | Set if module paths require it |
-| `AWS_DEFAULT_REGION` | e.g. `eu-west-1` | MUST (at runtime) | AWS region to operate in |
-| `AWS_ACCESS_KEY_ID` | — | MUST NOT be in image | Injected at runtime or via IAM role |
-| `AWS_SECRET_ACCESS_KEY` | — | MUST NOT be in image | Injected at runtime or via IAM role |
+The following environment variables MUST be set in the Dockerfile:
 
-AWS credentials MUST NOT be set as environment variables in the Dockerfile. They MUST be injected at runtime via CI/CD secret variables or an IAM instance/task role. The use of an IAM role is RECOMMENDED where the container runs on AWS infrastructure.
+| Variable | Value | Purpose |
+|---|---|---|
+| `PYTHONDONTWRITEBYTECODE` | `1` | Prevents `.pyc` file creation |
+| `PYTHONUNBUFFERED` | `1` | Ensures real-time log output in CI |
+
+The following variables MUST be injected at runtime and MUST NOT appear in the Dockerfile or any committed file:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `AWS_DEFAULT_REGION` | MUST | AWS region to operate in (e.g. `eu-west-1`) |
+| `AWS_ACCESS_KEY_ID` | MUST (unless IAM role used) | AWS authentication |
+| `AWS_SECRET_ACCESS_KEY` | MUST (unless IAM role used) | AWS authentication |
+
+The use of an IAM instance or task role is RECOMMENDED over static credentials where the container runs on AWS infrastructure. Where static credentials are used, they MUST be stored as GitLab CI/CD secret variables.
 
 ---
 
 ## 5. Dependency Management
 
-- A `requirements.txt` file MUST be present and include all dependencies with exact pinned versions
-- Loose version specifiers MUST NOT be used in production images
-- `pip` MUST be upgraded before installing dependencies
-- The `--no-cache-dir` flag MUST be used with `pip install` to reduce image size
-- Dependencies MUST be installed before application code is copied, to preserve Docker layer caching
-- The following dependencies MUST be present:
+### 5.1 Runtime Dependencies (`requirements.txt`)
+
+- All runtime dependencies MUST be pinned to exact versions (e.g. `boto3==1.34.0`)
+- Loose version specifiers (e.g. `boto3>=1.0`) MUST NOT be used
+- The following packages MUST be present:
 
 | Package | Purpose |
 |---|---|
-| `boto3` | AWS SDK for Python — ASG and EC2 API calls |
+| `boto3` | AWS SDK — ASG API calls |
 | `pyyaml` | Configuration file loading |
+
+### 5.2 Development Dependencies (`requirements-dev.txt`)
+
+The following tools MUST be present, all pinned to exact versions:
+
+| Package | Purpose |
+|---|---|
+| `black` | Code formatting |
+| `flake8` | PEP 8 linting |
+| `pytest` | Unit test runner |
+| `pytest-cov` | Coverage measurement |
+
+### 5.3 Docker Build Rules
+
+- `pip` MUST be upgraded before installing dependencies
+- The `--no-cache-dir` flag MUST be used with all `pip install` invocations
+- `requirements.txt` MUST be copied and dependencies installed before application code is copied, to preserve Docker layer caching
 
 ---
 
@@ -68,17 +489,34 @@ AWS credentials MUST NOT be set as environment variables in the Dockerfile. They
 
 - A working directory MUST be explicitly set using `WORKDIR`
 - The RECOMMENDED path is `/app`
-- Application code MUST be copied into a subdirectory (e.g. `/app/src`) rather than directly into `WORKDIR`
+- Application code MUST be placed in a subdirectory (e.g. `/app/src`) rather than directly in `WORKDIR`
 
 ---
 
 ## 7. Security
 
+### 7.1 Container Security
+
 - The container MUST NOT run as the root user
-- A non-root user MUST be created and set as the active user before the `CMD` or `ENTRYPOINT` instruction
+- A dedicated non-root user MUST be created and activated before the `ENTRYPOINT` or `CMD` instruction:
+
+```dockerfile
+RUN useradd --create-home appuser
+USER appuser
+```
+
 - The image MUST NOT contain credentials, API keys, or secrets of any kind
-- System packages installed via `apt-get` MUST clean up package lists in the same `RUN` layer using `rm -rf /var/lib/apt/lists/*`
-- The IAM permissions granted to the container MUST follow least privilege; the minimum required permissions are:
+- System packages installed via `apt-get` MUST clean up package lists in the same `RUN` layer:
+
+```dockerfile
+RUN apt-get update && apt-get install -y --no-install-recommends \
+     \
+    && rm -rf /var/lib/apt/lists/*
+```
+
+### 7.2 IAM Permissions
+
+The IAM policy attached to the container MUST follow least privilege. The minimum required permissions are:
 
 ```json
 {
@@ -92,27 +530,26 @@ AWS credentials MUST NOT be set as environment variables in the Dockerfile. They
 }
 ```
 
-- `autoscaling:DescribeAutoScalingGroups` cannot be scoped to a specific resource ARN as tag filtering is performed client-side
+`autoscaling:DescribeAutoScalingGroups` cannot be scoped to a specific resource ARN as tag filtering is performed client-side.
 
 ---
 
 ## 8. Entry Point
 
-- The Dockerfile MUST define an `ENTRYPOINT` to allow commands and arguments to be passed at runtime:
+- The Dockerfile MUST define an `ENTRYPOINT` so that sub-commands and arguments can be passed at runtime
+- Shell form MUST NOT be used as it spawns an intermediate shell and prevents correct signal handling
+- `CMD` MUST default to `--help` so that running the container without arguments produces usage information:
 
 ```dockerfile
 ENTRYPOINT ["python", "src/main.py"]
 CMD ["--help"]
 ```
 
-- Shell form MUST NOT be used as it prevents correct signal handling
-
 ---
 
 ## 9. Build Context
 
-- A `.dockerignore` file MUST be present
-- The following MUST be excluded from the build context:
+- A `.dockerignore` file MUST be present and MUST exclude at minimum:
 
 ```
 __pycache__/
@@ -122,69 +559,518 @@ __pycache__/
 .venv
 venv/
 .git/
+tests/
+requirements-dev.txt
 ```
 
 ---
 
-## 10. Versioning and Tagging
+## 10. Image Versioning and Tagging
 
-- Built images MUST be tagged with a semantic version (e.g. `asg-refresh:1.2.0`)
-- The `latest` tag MAY be applied in addition to a versioned tag but MUST NOT be used as the sole tag
+- Built images MUST be tagged with a semantic version (e.g. `asg-refresh:2.0.0`)
+- The `latest` tag MAY be applied alongside a versioned tag but MUST NOT be used as the sole tag
 - Image tags MUST NOT be mutated once published to a shared registry
+- The image version SHOULD be aligned with the repository release version managed by semantic-release (see Section 21)
 
 ---
 
 ## 11. Logging
 
-- All output MUST be written to `stdout` or `stderr`
-- Log format SHOULD be structured JSON for production workloads, including at minimum: `timestamp`, `level`, `command`, and `message` fields
-- During monitor polling, each poll result MUST be logged including the current refresh status and percentage complete where available
-- On completion or failure, a final summary log entry MUST be written including total elapsed time
+- All application output MUST be written to `stdout` or `stderr`; no file-based logging within the container
+- Log format SHOULD be structured JSON for production workloads, containing at minimum: `timestamp`, `level`, `command`, and `message`
+- The `start` command MUST log the resolved ASG name and the refresh ID on success
+- The `monitor` command MUST log the current refresh status and `PercentageComplete` on every poll
+- On reaching a terminal state, `monitor` MUST write a final summary log including total elapsed time and final status
 
 ---
 
-## 12. GitLab CI Artifact Integration
+## 12. Project Structure
 
-The two commands are designed to run as separate GitLab CI jobs. State is passed between them via a dotenv artifact file.
+The repository MUST follow this layout:
 
-### 12.1 Artifact File
+```
+project/
+├── Dockerfile
+├── .dockerignore
+├── .flake8
+├── .coveragerc
+├── .releaserc.json
+├── sonar-project.properties
+├── pyproject.toml
+├── requirements.txt
+├── requirements-dev.txt
+├── config/
+│   ├── config.yaml
+│   └── config.example.yaml
+├── src/
+│   ├── __init__.py
+│   ├── main.py
+│   └── modules/
+│       ├── __init__.py
+│       ├── asg_lookup.py       # ASG resolution via tag key/value
+│       ├── refresh_start.py    # start command logic and artifact writing
+│       └── refresh_monitor.py  # monitor command logic and artifact reading
+└── tests/
+    ├── __init__.py
+    ├── test_asg_lookup.py
+    ├── test_refresh_start.py
+    └── test_refresh_monitor.py
+```
 
-- The `start` command MUST write the refresh ID to a file at the path `outputs/refresh.env` relative to the working directory
-- The `outputs/` directory MUST be created by the application if it does not exist; the application MUST NOT fail if the directory already exists
-- The file MUST use dotenv format so it can be declared as a `dotenv` artifact in GitLab CI:
+- Each directory containing Python modules MUST include an `__init__.py` file
+- `main.py` MUST act solely as the entry point — parsing the sub-command and delegating to the appropriate module
+- All business logic MUST reside in the relevant module under `modules/`; `main.py` MUST NOT contain business logic
+- Inter-module imports MUST use absolute package imports
+
+---
+
+## 13. Configuration Management
+
+- Application defaults MUST be stored in `config/config.yaml`
+- The configuration file MUST NOT contain AWS credentials or region
+- The following keys MUST be supported:
+
+```yaml
+defaults:
+  min_healthy_percentage: 90
+  max_healthy_percentage: 100
+  instance_warmup: 300
+  poll_interval: 30
+  timeout: 1800
+  skip_matching: true       # default; use --no-skip-matching to override
+
+artifacts:
+  output_dir: outputs
+  refresh_env_filename: refresh.env
+```
+
+- CLI arguments MUST take precedence over config file values
+- The artifact output path (`output_dir` / `refresh_env_filename`) MUST be configurable via the config file and MUST default to `outputs/refresh.env`
+- Configuration loading MUST fail fast with a clear error message if the file is missing or malformed
+- A `config.example.yaml` documenting all supported keys MUST be present in the repository
+
+---
+
+## 14. Application Commands
+
+The application MUST expose two sub-commands as the first positional argument to `main.py`.
+
+---
+
+### 14.1 `start` — Initiate Instance Refresh
+
+**Purpose:** Resolves the target ASG by tag, initiates an AWS instance refresh, and writes the resulting `InstanceRefreshId` to `outputs/refresh.env` for consumption by the `monitor` job.
+
+#### Required Arguments
+
+| Argument | Type | Description |
+|---|---|---|
+| `--tag-key` | string | The AWS tag key used to locate the target ASG (e.g. `Name`, `Environment`) |
+| `--tag-value` | string | The AWS tag value to match (e.g. `my-asg`, `production`) |
+
+Both `--tag-key` and `--tag-value` MUST be provided together. Providing one without the other MUST result in exit code `3`.
+
+#### Optional Arguments
+
+| Argument | Type | Default | Description |
+|---|---|---|---|
+| `--min-healthy-percentage` | integer | `90` | Minimum percentage of healthy instances during refresh |
+| `--max-healthy-percentage` | integer | `100` | Maximum percentage of healthy instances; values above 100 allow over-provisioning during refresh (see Section 17) |
+| `--instance-warmup` | integer | `300` | Seconds to wait for new instances to be considered healthy |
+| `--no-skip-matching` | flag | off | Overrides the default skip-matching behaviour and forces replacement of all instances regardless of current state (see Section 16) |
+| `--checkpoint-percentages` | list of int | none | Percentages at which to pause the refresh for manual verification |
+| `--checkpoint-delay` | integer | `3600` | Seconds to wait at each checkpoint before continuing |
+
+#### Output
+
+On success the command MUST:
+
+1. Create the `outputs/` directory if it does not exist
+2. Write `INSTANCE_REFRESH_ID=<id>` to `outputs/refresh.env` in dotenv format
+3. Log the resolved ASG name and refresh ID to `stdout`
+
+#### Exit Codes
+
+| Code | Meaning |
+|---|---|
+| `0` | Refresh initiated and artifact written successfully |
+| `1` | ASG not found — tag lookup returned zero results |
+| `2` | AWS API error |
+| `3` | Invalid or missing arguments |
+| `4` | Failed to write artifact file |
+
+---
+
+### 14.2 `monitor` — Monitor Refresh Completion
+
+**Purpose:** Reads an `InstanceRefreshId` and polls the AWS API at a configured interval until the refresh reaches a terminal state or the local timeout is exceeded.
+
+#### Required Arguments
+
+| Argument | Type | Description |
+|---|---|---|
+| `--tag-key` | string | Tag key used to locate the target ASG |
+| `--tag-value` | string | Tag value used to locate the target ASG |
+
+#### Optional Arguments
+
+| Argument | Type | Default | Description |
+|---|---|---|---|
+| `--refresh-id` | string | read from `outputs/refresh.env` | The `InstanceRefreshId` to monitor. If omitted, the value is read from the `INSTANCE_REFRESH_ID` key in `outputs/refresh.env` |
+| `--poll-interval` | integer | `30` | Seconds between each AWS API poll |
+| `--timeout` | integer | `1800` | Maximum seconds to wait before exiting with a timeout error |
+
+If neither `--refresh-id` nor `outputs/refresh.env` is available, the command MUST exit with code `3` and a descriptive error.
+
+#### Terminal States
+
+The monitor MUST exit immediately when any of the following AWS states is returned:
+
+| AWS State | Exit Code | Meaning |
+|---|---|---|
+| `Successful` | `0` | Refresh completed successfully |
+| `Failed` | `1` | Refresh failed |
+| `Cancelled` | `2` | Refresh was cancelled |
+| `RollbackSuccessful` | `4` | AWS rolled back the refresh successfully |
+| `RollbackFailed` | `5` | AWS rollback also failed |
+
+#### Local Exit Conditions
+
+| Condition | Exit Code |
+|---|---|
+| Local timeout exceeded before terminal state | `3` |
+| `outputs/refresh.env` missing and no `--refresh-id` supplied | `3` |
+| AWS API error during polling | `2` |
+
+---
+
+## 15. GitLab CI Artifact Integration
+
+### 15.1 Artifact File Format
+
+- The `start` command MUST write to `outputs/refresh.env` using dotenv format:
 
 ```dotenv
 INSTANCE_REFRESH_ID=abc-1234-def-5678
 ```
 
-- The `monitor` command MUST read the refresh ID from `outputs/refresh.env` if `--refresh-id` is not provided explicitly on the command line
-- If neither the file nor the CLI argument is present, the `monitor` command MUST exit with code `3` and a clear error message
+- The `outputs/` directory MUST be created by the application if absent; the application MUST NOT fail if the directory already exists
+- The file MUST be declared in the `start-refresh` job as a `dotenv` report artifact so GitLab injects `INSTANCE_REFRESH_ID` as an environment variable in downstream jobs
 
-### 12.2 Example `.gitlab-ci.yml`
+### 15.2 Job Dependency
+
+- The `monitor-refresh` job MUST declare `needs` with `artifacts: true` referencing `start-refresh`, ensuring the dotenv artifact is available before the monitor runs
+- The `--refresh-id $INSTANCE_REFRESH_ID` argument SHOULD be passed explicitly in the monitor job script to make the dependency visible
+
+---
+
+## 16. Skip Matching
+
+- `SkipMatching` MUST default to `true` in all `StartInstanceRefresh` API calls
+- This means instances already running the desired launch template or configuration version are bypassed by default, reducing unnecessary replacement and shortening refresh duration
+- When `--no-skip-matching` is passed to the `start` command, `SkipMatching` MUST be set to `false`, forcing all instances to be replaced regardless of their current state
+- The skip matching behaviour is enforced by the AWS API; the application MUST NOT attempt to replicate or override it client-side
+
+---
+
+## 17. Max Healthy Percentage
+
+- `--max-healthy-percentage` controls the upper bound on healthy instance count during a refresh, expressed as a percentage of the ASG desired capacity
+- The value MUST be an integer between `100` and `200` inclusive; values outside this range MUST be rejected with exit code `3`
+- Setting above `100` permits AWS to launch replacement instances before terminating existing ones (over-provisioning), enabling faster refresh at temporary additional cost
+- Setting to `100` (the default) ensures the ASG never exceeds its desired capacity during the refresh
+- The value MUST be greater than or equal to `--min-healthy-percentage`; if this constraint is violated, the application MUST exit with code `3` before making any AWS API call
+
+---
+
+## 18. ASG Tag Lookup
+
+- The application MUST resolve the target ASG exclusively via tag lookup; direct ASG name input MUST NOT be supported
+- On each command invocation, the application MUST call `DescribeAutoScalingGroups` and filter the results client-side for ASGs whose tags contain the specified `--tag-key` / `--tag-value` pair
+- Tag matching MUST be case-sensitive
+- If exactly one ASG matches, its name MUST be used for all subsequent API calls
+- If zero ASGs match, the application MUST exit with code `1` and log an error including the tag key and value that were searched
+- If more than one ASG matches, the application MUST exit with code `1` and log the names of all matching ASGs, requiring the operator to use a more specific tag combination
+
+---
+
+## 19. Code Quality Standards
+
+All code in this repository MUST meet the following standards before being merged or released.
+
+### 19.1 Code Formatting — Black
+
+- All Python source files MUST be formatted with `black`
+- In CI, black MUST be run with `--check`; any file that would be reformatted MUST fail the pipeline
+- Black configuration MUST be defined in `pyproject.toml`
+
+### 19.2 Linting — Flake8
+
+- All Python source files MUST pass `flake8` with zero violations
+- Flake8 configuration MUST be stored in `.flake8` in the repository root
+- The maximum line length SHOULD be consistent with the black configuration (typically 88 characters)
+
+### 19.3 Testing — pytest
+
+- All functionality MUST have corresponding unit tests under the `tests/` directory
+- Tests MUST be runnable with `pytest` from the repository root
+- Test coverage MUST be measured with branch coverage enabled and MUST not fall below **80%**
+- Coverage reports MUST be generated in `term-missing` format (for CI logs) and `xml` format (for SonarCloud)
+- The pipeline MUST fail if coverage falls below the threshold
+
+### 19.4 Coverage Configuration
+
+A `.coveragerc` file MUST be present and MUST include at minimum:
+
+```ini
+[run]
+branch = True
+source = src
+
+[report]
+fail_under = 80
+```
+
+---
+
+## 20. Required Configuration Files
+
+The following files MUST be present in the repository root:
+
+| File | Purpose |
+|---|---|
+| `.flake8` | Flake8 linting rules (line length, per-file ignores, exclusions) |
+| `.coveragerc` | Coverage measurement settings (branch coverage, fail threshold) |
+| `sonar-project.properties` | SonarCloud project and quality gate configuration |
+| `.releaserc.json` | semantic-release branch and plugin configuration |
+| `pyproject.toml` | Python package definition, black configuration, pytest settings |
+
+### `sonar-project.properties` (minimum required keys)
+
+```properties
+sonar.projectKey=
+sonar.organization=
+sonar.sources=src
+sonar.tests=tests
+sonar.python.coverage.reportPaths=coverage.xml
+sonar.qualitygate.wait=true
+```
+
+### `.releaserc.json` (minimum required structure)
+
+```json
+{
+  "branches": ["main"],
+  "plugins": [
+    "@semantic-release/commit-analyzer",
+    "@semantic-release/release-notes-generator",
+    "@semantic-release/changelog",
+    "@semantic-release/gitlab"
+  ]
+}
+```
+
+---
+
+## 21. CI/CD Pipeline
+
+### 21.1 Pipeline Overview
+
+The pipeline MUST consist of the following stages in order:
+
+```
+lint-and-test → secret-scan → analysis → build → refresh → verify → release
+```
+
+The `analysis` stage contains both `sonarcloud` and `semgrep` jobs, which MUST run in parallel. All stages except `refresh`, `verify`, and `release` MUST run on every push and merge request. The `refresh`, `verify`, and `release` stages MUST run on the default branch (`main`) only.
+
+### 21.2 Required CI/CD Secret Variables
+
+The following variables MUST be configured in GitLab's CI/CD settings and MUST NOT appear in any committed file:
+
+| Variable | Required | Purpose |
+|---|---|---|
+| `GITGUARDIAN_API_KEY` | MUST | GitGuardian secret scanning |
+| `SONAR_TOKEN` | MUST | SonarCloud authentication |
+| `SEMGREP_APP_TOKEN` | SHOULD | Semgrep Cloud reporting (optional for OSS rulesets) |
+| `GITLAB_TOKEN` | MUST | semantic-release tagging and release creation |
+| `AWS_ACCESS_KEY_ID` | MUST | AWS authentication for refresh and verify stages |
+| `AWS_SECRET_ACCESS_KEY` | MUST | AWS authentication for refresh and verify stages |
+| `AWS_DEFAULT_REGION` | MUST | AWS region for refresh and verify stages |
+
+---
+
+### 21.3 Stage: `lint-and-test`
+
+**Purpose:** Enforces code formatting, linting, and test coverage in a clean environment.
+
+**Requirements:**
+- Black MUST run with `--check`; formatting violations MUST fail the job
+- Flake8 MUST run against `src/` and `tests/`; any violation MUST fail the job
+- pytest MUST run with branch coverage; coverage below 80% MUST fail the job
+- The XML coverage report MUST be published as an artifact for use by the `sonarcloud` job
 
 ```yaml
-stages:
-  - refresh
-  - verify
+lint-and-test:
+  stage: lint-and-test
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir -r requirements-dev.txt
+    - black --check src/ tests/
+    - flake8 src/ tests/
+    - pytest --cov=src --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 1 day
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+```
 
+---
+
+### 21.4 Stage: `secret-scan`
+
+**Purpose:** Scans the entire git repository history for committed secrets using GitGuardian.
+
+**Requirements:**
+- The scan MUST use `ggshield secret scan repo .` covering the full git history, not just the current commit
+- `GITGUARDIAN_API_KEY` MUST be injected as a CI secret variable
+- Any detected secret MUST fail the job
+- This stage MUST run on all branches and merge requests without exception
+
+```yaml
+secret-scan:
+  stage: secret-scan
+  image: gitguardian/ggshield:latest
+  variables:
+    GITGUARDIAN_API_KEY: $GITGUARDIAN_API_KEY
+  script:
+    - ggshield secret scan repo .
+```
+
+---
+
+### 21.5 Stage: `analysis` (sonarcloud + semgrep in parallel)
+
+**Purpose:** Static analysis for code quality, security vulnerabilities, and technical debt.
+
+#### `sonarcloud`
+
+**Requirements:**
+- MUST only run on `main` and merge requests targeting `main`
+- The `coverage.xml` artifact from `lint-and-test` MUST be consumed
+- The quality gate MUST enforce: coverage ≥ 80%, maintainability rating ≥ A, no unreviewed security hotspots
+- The pipeline MUST fail if the SonarCloud quality gate fails (`sonar.qualitygate.wait=true`)
+
+```yaml
+sonarcloud:
+  stage: analysis
+  image: sonarsource/sonar-scanner-cli:latest
+  needs:
+    - job: lint-and-test
+      artifacts: true
+  variables:
+    SONAR_TOKEN: $SONAR_TOKEN
+    SONAR_HOST_URL: https://sonarcloud.io
+  script:
+    - sonar-scanner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+```
+
+#### `semgrep`
+
+**Requirements:**
+- MUST run the `p/python` and `p/secrets` rulesets as a minimum
+- Any finding of `ERROR` severity MUST fail the job
+- Runs in parallel with `sonarcloud` within the `analysis` stage
+
+```yaml
+semgrep:
+  stage: analysis
+  image: returntocorp/semgrep:latest
+  script:
+    - semgrep --config=p/python --config=p/secrets --error .
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+```
+
+---
+
+### 21.6 Stage: `build`
+
+**Purpose:** Validates the Python package builds correctly and all declared dependencies are satisfied.
+
+**Requirements:**
+- The build MUST produce `sdist` and `wheel` distribution artifacts
+- The job MUST fail if `pyproject.toml` is invalid or any dependency cannot be resolved
+- The `dist/` directory MUST be published as an artifact
+
+```yaml
+build:
+  stage: build
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir build
+    - python -m build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+```
+
+---
+
+### 21.7 Stage: `refresh` — `start-refresh` job
+
+**Purpose:** Runs the containerised `start` command to initiate the ASG instance refresh.
+
+**Requirements:**
+- MUST only run on `main`
+- MUST depend on the `build` stage completing successfully
+- The `outputs/refresh.env` artifact MUST be declared as a `dotenv` report so GitLab injects `INSTANCE_REFRESH_ID` into downstream jobs
+
+```yaml
 start-refresh:
   stage: refresh
-  image: asg-refresh:1.2.0
+  image: asg-refresh:2.0.0
+  needs:
+    - build
   script:
     - python src/main.py start
         --tag-key Name
         --tag-value my-asg
-        # --no-skip-matching  # uncomment to force full replacement
         --min-healthy-percentage 90
         --max-healthy-percentage 110
         --instance-warmup 300
+        # --no-skip-matching  # uncomment to force full instance replacement
   artifacts:
     reports:
       dotenv: outputs/refresh.env
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+```
 
+---
+
+### 21.8 Stage: `verify` — `monitor-refresh` job
+
+**Purpose:** Monitors the running instance refresh to completion, failing the pipeline if the refresh does not succeed.
+
+**Requirements:**
+- MUST only run on `main`
+- MUST declare `needs` with `artifacts: true` referencing `start-refresh` to receive the dotenv artifact
+- The `--refresh-id $INSTANCE_REFRESH_ID` argument MUST be passed explicitly using the variable injected by the dotenv artifact
+
+```yaml
 monitor-refresh:
   stage: verify
-  image: asg-refresh:1.2.0
+  image: asg-refresh:2.0.0
   needs:
     - job: start-refresh
       artifacts: true
@@ -195,207 +1081,229 @@ monitor-refresh:
         --refresh-id $INSTANCE_REFRESH_ID
         --poll-interval 30
         --timeout 1800
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
 ```
 
 ---
 
-## 13. Application Commands
+### 21.9 Stage: `release`
 
-The application MUST expose two sub-commands, invoked as the first positional argument to `main.py`.
+**Purpose:** Calculates the next semantic version from conventional commit history, generates a changelog, and publishes a GitLab release.
 
-### 13.1 `start` — Initiate Instance Refresh
+**Requirements:**
+- MUST only run on `main`
+- MUST depend on `monitor-refresh` — a release MUST NOT be published if the refresh failed
+- Release versioning MUST follow Conventional Commits:
 
-**Purpose:** Locates an ASG by tag, starts an instance refresh, and writes the `InstanceRefreshId` to `outputs/refresh.env`.
-
-**Required arguments:**
-
-| Argument | Type | Description |
-|---|---|---|
-| `--tag-key` | string | The tag key used to locate the target ASG (e.g. `Name`, `Environment`) |
-| `--tag-value` | string | The tag value to match against the specified key (e.g. `my-asg`, `production`) |
-
-Both `--tag-key` and `--tag-value` MUST be provided together. Providing one without the other MUST result in an argument error.
-
-**Optional arguments:**
-
-| Argument | Type | Default | Description |
-|---|---|---|---|
-| `--min-healthy-percentage` | integer | `90` | Minimum percentage of healthy instances during refresh |
-| `--max-healthy-percentage` | integer | `100` | Maximum percentage of healthy instances during refresh, controlling the rate of new instance launch |
-| `--instance-warmup` | integer | `300` | Warm-up time in seconds for new instances before they are considered healthy |
-| `--no-skip-matching` | flag | `false` | If set, overrides the default behaviour and forces all instances to be replaced regardless of their current configuration (see Section 15) |
-| `--checkpoint-percentages` | list of int | none | Optional list of percentages at which to pause the refresh |
-| `--checkpoint-delay` | integer | `3600` | Seconds to wait at each checkpoint before continuing |
-
-**Output:** On success the command MUST:
-
-1. Write `INSTANCE_REFRESH_ID=<id>` to `outputs/refresh.env`
-2. Log the refresh ID and ASG name to `stdout`
-
-**Exit codes:**
-
-| Code | Meaning |
+| Commit prefix | Version bump |
 |---|---|
-| `0` | Refresh successfully initiated and artifact written |
-| `1` | ASG not found or tag lookup returned no results |
-| `2` | AWS API error |
-| `3` | Invalid or missing arguments |
-| `4` | Failed to write artifact file |
-
----
-
-### 13.2 `monitor` — Monitor Refresh Completion
-
-**Purpose:** Reads an `InstanceRefreshId` (from file or CLI), then polls the AWS API until the refresh reaches a terminal state or the timeout is exceeded.
-
-**Required arguments:**
-
-| Argument | Type | Description |
-|---|---|---|
-| `--tag-key` | string | Tag key used to locate the target ASG |
-| `--tag-value` | string | Tag value used to locate the target ASG |
-
-**Optional arguments:**
-
-| Argument | Type | Default | Description |
-|---|---|---|---|
-| `--refresh-id` | string | read from `outputs/refresh.env` | The `InstanceRefreshId` to monitor. If not provided, read from the dotenv artifact |
-| `--poll-interval` | integer | `30` | Seconds between each status poll |
-| `--timeout` | integer | `1800` | Maximum seconds to wait before exiting with a timeout error |
-
-**Terminal states:** The monitor command MUST exit when one of the following states is returned by the AWS API:
-
-| AWS State | Exit Code | Description |
-|---|---|---|
-| `Successful` | `0` | Refresh completed successfully |
-| `Failed` | `1` | Refresh failed |
-| `Cancelled` | `2` | Refresh was cancelled |
-| `RollbackSuccessful` | `4` | Refresh was rolled back successfully |
-| `RollbackFailed` | `5` | Rollback attempt also failed |
-
-**Local exit conditions:**
-
-| Condition | Exit Code |
-|---|---|
-| Local timeout exceeded | `3` |
-| Artifact file missing and no `--refresh-id` provided | `3` |
-| AWS API error during polling | `2` |
-
-**Behaviour:** On each poll the monitor MUST log the current status and `PercentageComplete`. On reaching a terminal state it MUST log a final summary including total elapsed time.
-
----
-
-## 14. Project Structure
-
-The application MUST follow this structure:
-
-```
-project/
-├── Dockerfile
-├── .dockerignore
-├── requirements.txt
-├── config/
-│   ├── config.yaml
-│   └── config.example.yaml
-└── src/
-    ├── __init__.py
-    ├── main.py
-    └── modules/
-        ├── __init__.py
-        ├── asg_lookup.py      # ASG resolution via tag_key + tag_value
-        ├── refresh_start.py   # start command logic and artifact writing
-        └── refresh_monitor.py # monitor command logic and artifact reading
-```
-
-- Each directory containing Python modules MUST include an `__init__.py` file
-- `main.py` MUST act solely as the entry point — parsing the sub-command and delegating to the appropriate module
-- Business logic MUST reside in the relevant module, not in `main.py`
-- Inter-module imports MUST use absolute package imports
-
----
-
-## 15. Skip Matching
-
-- `SkipMatching` MUST default to `true` in all `StartInstanceRefresh` API calls
-- When `--no-skip-matching` is passed, the `SkipMatching` property MUST be set to `false`, forcing all instances to be replaced
-- By default this means instances already running the desired launch template or configuration version are bypassed, reducing unnecessary replacement and refresh duration
-- The use of `--no-skip-matching` MAY be used when a full replacement of all instances is required regardless of their current state, such as after a forced rollout
-- The skip matching behaviour is governed entirely by the AWS API; the application MUST NOT attempt to replicate or override this logic client-side
-
----
-
-## 16. ASG Name Lookup via Tags
-
-- The application MUST resolve the target ASG exclusively via tag lookup using `--tag-key` and `--tag-value`; direct ASG name input MUST NOT be supported
-- On startup, the application MUST call `DescribeAutoScalingGroups` and filter results client-side for ASGs whose tags contain the specified key=value pair
-- If exactly one ASG matches, its name MUST be used for all subsequent API calls
-- If zero ASGs match, the application MUST exit with code `1` and log a descriptive error message including the tag key and value searched
-- If more than one ASG matches, the application MUST exit with code `1` and log the names of all matching ASGs, requiring the operator to use a more specific tag combination
-- Tag matching MUST be case-sensitive
-
----
-
-## 17. Max Healthy Percentage
-
-- The `--max-healthy-percentage` argument controls the upper bound on healthy instance count during a refresh, expressed as a percentage of the ASG desired capacity
-- Setting this above `100` permits AWS to launch replacement instances before terminating existing ones, enabling a faster refresh at the cost of temporarily running above desired capacity
-- Setting this to `100` (the default) ensures the ASG never exceeds its desired capacity during the refresh
-- The value MUST be an integer between `100` and `200` inclusive
-- Values below `100` MUST be rejected with an argument error
-- The value MUST be greater than or equal to `--min-healthy-percentage`; if it is not, the application MUST exit with code `3` before making any AWS API calls
-
----
-
-## 18. Configuration Management
-
-- Application defaults MUST be stored in `config/config.yaml`
-- The configuration file MUST NOT contain AWS credentials or region; these MUST be injected at runtime
-- The following keys MUST be supported in the config file:
+| `feat:` | Minor (e.g. 1.0.0 → 1.1.0) |
+| `fix:` | Patch (e.g. 1.0.0 → 1.0.1) |
+| `feat!:` or `BREAKING CHANGE:` | Major (e.g. 1.0.0 → 2.0.0) |
+| `docs:`, `chore:`, `ci:`, `test:`, `refactor:` | No release |
 
 ```yaml
-defaults:
-  min_healthy_percentage: 90
-  max_healthy_percentage: 100
-  instance_warmup: 300
-  poll_interval: 30
-  timeout: 1800
-  skip_matching: true  # default; set to false to force full instance replacement
-
-artifacts:
-  output_dir: outputs
-  refresh_env_filename: refresh.env
+release:
+  stage: release
+  image: node:20-slim
+  needs:
+    - monitor-refresh
+  script:
+    - npm install -g semantic-release @semantic-release/gitlab @semantic-release/changelog @semantic-release/git
+    - npx semantic-release
+  variables:
+    GITLAB_TOKEN: $GITLAB_TOKEN
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
 ```
-
-- CLI arguments MUST take precedence over config file values
-- The artifact output path (`output_dir` + `refresh_env_filename`) MUST be configurable via the config file but MUST default to `outputs/refresh.env`
-- Configuration loading MUST fail fast with a clear error if the file is missing or malformed
-- A `config.example.yaml` with all keys documented MUST be included in the repository
 
 ---
 
-## 19. Compliance Checklist
+### 21.10 Full `.gitlab-ci.yml`
 
-Before publishing an image, the following MUST be verified:
+```yaml
+stages:
+  - lint-and-test
+  - secret-scan
+  - analysis
+  - build
+  - refresh
+  - verify
+  - release
 
-- [ ] Base image pinned to Python 3.10+, non-`latest` tag
-- [ ] All dependencies pinned to exact versions including `boto3` and `pyyaml`
-- [ ] `PYTHONUNBUFFERED` and `PYTHONDONTWRITEBYTECODE` set
-- [ ] Non-root user defined and active
-- [ ] No AWS credentials or secrets present in the image or config files
-- [ ] `.dockerignore` present and complete
+# ── Code Quality ──────────────────────────────────────────────────────────────
+
+lint-and-test:
+  stage: lint-and-test
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir -r requirements-dev.txt
+    - black --check src/ tests/
+    - flake8 src/ tests/
+    - pytest --cov=src --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 1 day
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+
+secret-scan:
+  stage: secret-scan
+  image: gitguardian/ggshield:latest
+  variables:
+    GITGUARDIAN_API_KEY: $GITGUARDIAN_API_KEY
+  script:
+    - ggshield secret scan repo .
+
+sonarcloud:
+  stage: analysis
+  image: sonarsource/sonar-scanner-cli:latest
+  needs:
+    - job: lint-and-test
+      artifacts: true
+  variables:
+    SONAR_TOKEN: $SONAR_TOKEN
+    SONAR_HOST_URL: https://sonarcloud.io
+  script:
+    - sonar-scanner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+semgrep:
+  stage: analysis
+  image: returntocorp/semgrep:latest
+  script:
+    - semgrep --config=p/python --config=p/secrets --error .
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+
+build:
+  stage: build
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir build
+    - python -m build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# ── ASG Instance Refresh ──────────────────────────────────────────────────────
+
+start-refresh:
+  stage: refresh
+  image: asg-refresh:2.0.0
+  needs:
+    - build
+  script:
+    - python src/main.py start
+        --tag-key Name
+        --tag-value my-asg
+        --min-healthy-percentage 90
+        --max-healthy-percentage 110
+        --instance-warmup 300
+        # --no-skip-matching  # uncomment to force full instance replacement
+  artifacts:
+    reports:
+      dotenv: outputs/refresh.env
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+monitor-refresh:
+  stage: verify
+  image: asg-refresh:2.0.0
+  needs:
+    - job: start-refresh
+      artifacts: true
+  script:
+    - python src/main.py monitor
+        --tag-key Name
+        --tag-value my-asg
+        --refresh-id $INSTANCE_REFRESH_ID
+        --poll-interval 30
+        --timeout 1800
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ── Release ───────────────────────────────────────────────────────────────────
+
+release:
+  stage: release
+  image: node:20-slim
+  needs:
+    - monitor-refresh
+  script:
+    - npm install -g semantic-release @semantic-release/gitlab @semantic-release/changelog @semantic-release/git
+    - npx semantic-release
+  variables:
+    GITLAB_TOKEN: $GITLAB_TOKEN
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+```
+
+---
+
+## 22. Compliance Checklist
+
+Before publishing an image or merging to `main`, the following MUST be verified:
+
+### Container
+- [ ] Base image pinned to Python 3.10+, non-`latest` tag using `-slim` variant
+- [ ] `PYTHONUNBUFFERED` and `PYTHONDONTWRITEBYTECODE` set in Dockerfile
+- [ ] All runtime dependencies in `requirements.txt` pinned to exact versions including `boto3` and `pyyaml`
+- [ ] `pip` upgraded before dependency installation; `--no-cache-dir` used throughout
+- [ ] `requirements.txt` installed before application code is copied
+- [ ] Non-root user created and active before `ENTRYPOINT`
+- [ ] No credentials or secrets present in the image
+- [ ] `ENTRYPOINT` uses exec form; `CMD` defaults to `--help`
+- [ ] `.dockerignore` present and excludes `tests/`, `requirements-dev.txt`, caches, and VCS files
 - [ ] Image tagged with a semantic version
-- [ ] `ENTRYPOINT` defined; `CMD` defaults to `--help`
-- [ ] `start` command accepts `--tag-key` and `--tag-value`; `--asg-name` is not present
-- [ ] `start` command writes `INSTANCE_REFRESH_ID` to `outputs/refresh.env` in dotenv format
-- [ ] `outputs/` directory created automatically if absent
-- [ ] `--min-healthy-percentage` and `--max-healthy-percentage` implemented and validated against each other
-- [ ] `--max-healthy-percentage` constrained to 100–200
-- [ ] `SkipMatching` defaults to `true` in all StartInstanceRefresh calls
-- [ ] `--no-skip-matching` flag correctly sets `SkipMatching` to `false`
-- [ ] `monitor` command reads refresh ID from `outputs/refresh.env` when `--refresh-id` is not provided
-- [ ] `monitor` command exits with correct code for each terminal state
-- [ ] Poll interval and timeout implemented in `monitor`
-- [ ] Tag lookup handles zero matches, one match, and multiple matches with appropriate exit codes
+
+### Application
+- [ ] `start` command accepts `--tag-key` and `--tag-value`; no `--asg-name` argument exists
+- [ ] `start` writes `INSTANCE_REFRESH_ID=<id>` to `outputs/refresh.env` in dotenv format
+- [ ] `outputs/` directory auto-created if absent; no error if already exists
+- [ ] `SkipMatching` defaults to `true` in all `StartInstanceRefresh` API calls
+- [ ] `--no-skip-matching` sets `SkipMatching` to `false`
+- [ ] `--max-healthy-percentage` constrained to 100–200 and validated against `--min-healthy-percentage`
+- [ ] `monitor` reads refresh ID from `outputs/refresh.env` when `--refresh-id` is not provided
+- [ ] `monitor` exits with correct code for all terminal AWS states and local conditions
+- [ ] Tag lookup handles zero, one, and multiple matches with correct exit codes
 - [ ] Tag matching is case-sensitive
-- [ ] IAM permissions documented; least privilege principle applied
-- [ ] Example `.gitlab-ci.yml` included in repository documentation
+- [ ] All exit codes defined and consistently applied
+
+### Configuration
+- [ ] `config/config.yaml` present with all required keys and correct defaults
+- [ ] `config/config.example.yaml` present with all keys documented
+- [ ] CLI arguments take precedence over config file values
+- [ ] `artifacts.output_dir` and `artifacts.refresh_env_filename` configurable
+
+### IAM
+- [ ] Minimum IAM policy documented (`StartInstanceRefresh`, `DescribeInstanceRefreshes`, `DescribeAutoScalingGroups`)
+- [ ] No credentials in image, config files, or repository
+
+### Code Quality
+- [ ] `requirements-dev.txt` present with `black`, `flake8`, `pytest`, `pytest-cov` pinned
+- [ ] `.flake8` present and consistent with black line length
+- [ ] `.coveragerc` present with `branch = True` and `fail_under = 80`
+- [ ] All tests pass; coverage ≥ 80% with branch coverage enabled
+- [ ] No black formatting violations
+- [ ] No flake8 violations
+
+### Pipeline
+- [ ] All required CI/CD secret variables documented and configured in GitLab
+- [ ] `sonar-project.properties` present with all required keys including `sonar.qualitygate.wait=true`
+- [ ] `.releaserc.json` present with correct branch and plugin configuration
+- [ ] `sonarcloud` and `semgrep` run in parallel in the `analysis` stage
+- [ ] `start-refresh` publishes `outputs/refresh.env` as a `dotenv` report artifact
+- [ ] `monitor-refresh` declares `needs` with `artifacts: true` from `start-refresh`
+- [ ] `release` stage depends on `monitor-refresh` and only runs on `main`
+- [ ] Conventional commit format enforced; version bump table documented

@@ -52,7 +52,10 @@ def monitor(args, config):
     if not refresh_id:
         refresh_id = _read_refresh_id_from_artifact(artifacts)
     if not refresh_id:
-        _log("ERROR", "No refresh ID provided via --refresh-id and none found in artifact file")
+        _log(
+            "ERROR",
+            "No refresh ID provided via --refresh-id and none found in artifact file",
+        )
         sys.exit(3)
 
     _log("INFO", f"Monitoring instance refresh ID: {refresh_id}")
@@ -74,7 +77,8 @@ def monitor(args, config):
         if elapsed >= timeout:
             _log(
                 "ERROR",
-                f"Timed out after {elapsed:.0f}s waiting for refresh {refresh_id} to reach a terminal state",
+                f"Timed out after {elapsed:.0f}s waiting for refresh"
+                f" {refresh_id} to reach a terminal state",
             )
             sys.exit(3)
 
@@ -105,7 +109,8 @@ def monitor(args, config):
             exit_code = _TERMINAL_STATES[status]
             _log(
                 "INFO",
-                f"Instance refresh reached terminal state: {status} after {elapsed:.0f}s",
+                f"Instance refresh reached terminal state:"
+                f" {status} after {elapsed:.0f}s",
             )
             sys.exit(exit_code)
 

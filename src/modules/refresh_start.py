@@ -40,7 +40,8 @@ def start(args, config):
     if min_healthy > max_healthy:
         _log(
             "ERROR",
-            f"--min-healthy-percentage ({min_healthy}) must be <= --max-healthy-percentage ({max_healthy})",
+            f"--min-healthy-percentage ({min_healthy}) must be"
+            f" <= --max-healthy-percentage ({max_healthy})",
         )
         sys.exit(3)
 

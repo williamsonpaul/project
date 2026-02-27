@@ -1,0 +1,124 @@
+stages:
+  - lint-and-test
+  - secret-scan
+  - analysis
+  - build
+  - refresh
+  - verify
+  - release
+
+# ── Code Quality ──────────────────────────────────────────────────────────────
+
+lint-and-test:
+  stage: lint-and-test
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir -r requirements-dev.txt
+    - black --check src/ tests/
+    - flake8 src/ tests/
+    - pytest --cov=src --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80
+  artifacts:
+    reports:
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+    paths:
+      - coverage.xml
+    expire_in: 1 day
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+
+secret-scan:
+  stage: secret-scan
+  image: gitguardian/ggshield:latest
+  variables:
+    GITGUARDIAN_API_KEY: $GITGUARDIAN_API_KEY
+  script:
+    - ggshield secret scan repo .
+
+sonarcloud:
+  stage: analysis
+  image: sonarsource/sonar-scanner-cli:latest
+  needs:
+    - job: lint-and-test
+      artifacts: true
+  variables:
+    SONAR_TOKEN: $SONAR_TOKEN
+    SONAR_HOST_URL: https://sonarcloud.io
+  script:
+    - sonar-scanner
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+
+semgrep:
+  stage: analysis
+  image: returntocorp/semgrep:latest
+  script:
+    - semgrep --config=p/python --config=p/secrets --error .
+  variables:
+    SEMGREP_APP_TOKEN: $SEMGREP_APP_TOKEN
+
+# ── Build ─────────────────────────────────────────────────────────────────────
+
+build:
+  stage: build
+  image: python:3.12-slim
+  script:
+    - pip install --no-cache-dir build
+    - python -m build
+  artifacts:
+    paths:
+      - dist/
+    expire_in: 1 week
+
+# ── ASG Instance Refresh ──────────────────────────────────────────────────────
+
+start-refresh:
+  stage: refresh
+  image: asg-refresh:2.0.0
+  needs:
+    - build
+  script:
+    - python src/main.py start
+        --tag-key Name
+        --tag-value my-asg
+        --min-healthy-percentage 90
+        --max-healthy-percentage 110
+        --instance-warmup 300
+        # --no-skip-matching  # uncomment to force full instance replacement
+  artifacts:
+    reports:
+      dotenv: outputs/refresh.env
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+monitor-refresh:
+  stage: verify
+  image: asg-refresh:2.0.0
+  needs:
+    - job: start-refresh
+      artifacts: true
+  script:
+    - python src/main.py monitor
+        --tag-key Name
+        --tag-value my-asg
+        --refresh-id $INSTANCE_REFRESH_ID
+        --poll-interval 30
+        --timeout 1800
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'
+
+# ── Release ───────────────────────────────────────────────────────────────────
+
+release:
+  stage: release
+  image: node:20-slim
+  needs:
+    - monitor-refresh
+  script:
+    - npm install -g semantic-release @semantic-release/gitlab @semantic-release/changelog @semantic-release/git
+    - npx semantic-release
+  variables:
+    GITLAB_TOKEN: $GITLAB_TOKEN
+  rules:
+    - if: '$CI_COMMIT_BRANCH == "main"'

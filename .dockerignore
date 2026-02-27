@@ -5,3 +5,12 @@ __pycache__/
 .venv
 venv/
 .git/
+tests/
+requirements-dev.txt
+.flake8
+.coveragerc
+sonar-project.properties
+.releaserc.json
+pyproject.toml
+.gitlab-ci.yml
+*.xml

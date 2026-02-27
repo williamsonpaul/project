@@ -32,7 +32,9 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     start_parser.add_argument("--tag-key", required=True, help="ASG tag key to match")
-    start_parser.add_argument("--tag-value", required=True, help="ASG tag value to match")
+    start_parser.add_argument(
+        "--tag-value", required=True, help="ASG tag value to match"
+    )
     start_parser.add_argument(
         "--min-healthy-percentage",
         type=int,
@@ -43,7 +45,10 @@ def main():
         "--max-healthy-percentage",
         type=int,
         default=defaults.get("max_healthy_percentage", 100),
-        help="Maximum percentage of total capacity above desired during refresh (100–200)",
+        help=(
+            "Maximum percentage of total capacity above desired"
+            " during refresh (100-200)"
+        ),
     )
     start_parser.add_argument(
         "--instance-warmup",
@@ -77,7 +82,9 @@ def main():
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     monitor_parser.add_argument("--tag-key", required=True, help="ASG tag key to match")
-    monitor_parser.add_argument("--tag-value", required=True, help="ASG tag value to match")
+    monitor_parser.add_argument(
+        "--tag-value", required=True, help="ASG tag value to match"
+    )
     monitor_parser.add_argument(
         "--refresh-id",
         default=None,

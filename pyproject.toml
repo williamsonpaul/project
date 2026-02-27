@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "asg-refresh"
+version = "2.0.0"
+description = "AWS ASG Instance Refresh manager for GitLab CI/CD"
+requires-python = ">=3.10"
+dependencies = [
+    "boto3==1.37.2",
+    "pyyaml==6.0.2",
+]
+
+[tool.black]
+line-length = 88
+target-version = ["py310"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "--cov=src --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=80"
