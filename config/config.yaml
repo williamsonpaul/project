@@ -1,7 +1,11 @@
-app:
-  name: my-app
-  version: "1.0.0"
-  log_level: INFO
+defaults:
+  min_healthy_percentage: 90
+  max_healthy_percentage: 100
+  instance_warmup: 300
+  poll_interval: 30
+  timeout: 1800
+  skip_matching: true
 
-processing:
-  default_encoding: utf-8
+artifacts:
+  output_dir: outputs
+  refresh_env_filename: refresh.env

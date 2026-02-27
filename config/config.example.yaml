@@ -1,14 +1,28 @@
 # Example configuration file — copy to config.yaml and adjust values.
 # Secrets and credentials MUST NOT be stored here; inject them via environment variables at runtime.
 
-app:
-  # Display name of the application
-  name: my-app
-  # Semantic version of the application
-  version: "1.0.0"
-  # Log verbosity level: DEBUG, INFO, WARNING, ERROR
-  log_level: INFO
+defaults:
+  # Minimum percentage of healthy instances required during a refresh (0–100).
+  min_healthy_percentage: 90
 
-processing:
-  # Character encoding used when reading/writing files
-  default_encoding: utf-8
+  # Maximum percentage of total capacity that can be running beyond desired during a refresh (100–200).
+  max_healthy_percentage: 100
+
+  # Number of seconds to wait after a new instance is in service before continuing (seconds).
+  instance_warmup: 300
+
+  # How often the monitor job polls for refresh status (seconds).
+  poll_interval: 30
+
+  # Maximum total time the monitor job will wait before timing out (seconds).
+  timeout: 1800
+
+  # When true, instances already running the latest launch template version are skipped.
+  skip_matching: true
+
+artifacts:
+  # Directory where the dotenv artifact file is written by the start job and read by the monitor job.
+  output_dir: outputs
+
+  # Filename of the dotenv artifact (contains INSTANCE_REFRESH_ID=<id>).
+  refresh_env_filename: refresh.env
