@@ -1,0 +1,7 @@
+app:
+  name: my-app
+  version: "1.0.0"
+  log_level: INFO
+
+processing:
+  default_encoding: utf-8

@@ -1,0 +1,215 @@
+re# Python Script Docker Container Specification
+
+**Version:** 1.0
+**Status:** Draft
+
+---
+
+## 1. Purpose
+
+This specification defines the requirements for building and running Docker containers that execute Python scripts, ensuring consistency, security, and reproducibility across all environments.
+
+---
+
+## 2. Requirements Language
+
+The key words "MUST", "MUST NOT", "SHOULD", "SHOULD NOT", and "MAY" are used as defined in RFC 2119.
+
+---
+
+## 3. Base Image Requirements
+
+- The base image MUST be an official Python image from Docker Hub (`python:x.y-slim`)
+- The Python version MUST be 3.10 or greater
+- The image tag MUST be pinned to a specific minor version (e.g. `3.12-slim`)
+- The `latest` tag MUST NOT be used
+- The `-slim` variant SHOULD be used unless there is a documented reason to use the full image
+- The `-alpine` variant MAY be used where image size is a priority, with the caveat that binary package compatibility issues must be resolved
+
+---
+
+## 4. Environment Variables
+
+| Variable | Value | Required | Purpose |
+|---|---|---|---|
+| `PYTHONDONTWRITEBYTECODE` | `1` | MUST | Prevents `.pyc` file creation |
+| `PYTHONUNBUFFERED` | `1` | MUST | Ensures real-time log output |
+| `PYTHONPATH` | as needed | MAY | Set if module paths require it |
+
+Secrets and credentials MUST NOT be set as environment variables in the Dockerfile. They MUST be injected at runtime.
+
+---
+
+## 5. Dependency Management
+
+- A `requirements.txt` file MUST be present and include all dependencies with exact pinned versions (e.g. `requests==2.31.0`)
+- Loose version specifiers (e.g. `requests>=2.0`) MUST NOT be used in production images
+- `pip` MUST be upgraded before installing dependencies
+- The `--no-cache-dir` flag MUST be used with `pip install` to reduce image size
+- Dependencies MUST be installed before application code is copied, to preserve Docker layer caching
+
+---
+
+## 6. Working Directory
+
+- A working directory MUST be explicitly set using `WORKDIR`
+- The RECOMMENDED path is `/app`
+- Application code MUST be copied into a subdirectory (e.g. `/app/src`) rather than directly into `WORKDIR`
+
+---
+
+## 7. Security
+
+- The container MUST NOT run as the root user
+- A non-root user MUST be created and set as the active user before the `CMD` or `ENTRYPOINT` instruction
+- The image MUST NOT contain credentials, API keys, or secrets of any kind
+- System packages installed via `apt-get` MUST clean up package lists in the same `RUN` layer using `rm -rf /var/lib/apt/lists/*`
+
+---
+
+## 8. Entry Point
+
+- A `CMD` or `ENTRYPOINT` instruction MUST be defined
+- The RECOMMENDED form is `CMD ["python", "src/main.py"]`
+- Shell form (`CMD python src/main.py`) SHOULD NOT be used as it spawns an intermediate shell process and does not handle signals correctly
+
+---
+
+## 9. Build Context
+
+- A `.dockerignore` file MUST be present
+- The following MUST be excluded from the build context:
+
+```
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv
+venv/
+.git/
+```
+
+---
+
+## 10. Versioning and Tagging
+
+- Built images MUST be tagged with a semantic version (e.g. `my-app:1.2.0`)
+- The `latest` tag MAY be applied in addition to a versioned tag but MUST NOT be used as the sole tag
+- Image tags MUST NOT be mutated once published to a shared registry
+
+---
+
+## 11. Logging
+
+- Scripts MUST write all output to `stdout` or `stderr`
+- File-based logging within the container SHOULD NOT be used unless logs are written to a mounted volume
+- Log format SHOULD be structured (e.g. JSON) for production workloads
+
+---
+
+## 12. CLI Arguments and Options
+
+- Scripts that accept runtime parameters MUST use Python's `argparse` module or a third-party equivalent such as `click` or `typer`
+- Positional and optional arguments MUST be documented within the script using `argparse` help strings
+- All CLI arguments MUST be passable via `docker run` by appending them after the image name:
+
+```bash
+docker run --rm my-app:1.0 --input /app/data/input.csv --output /app/data/output.csv
+```
+
+- Where CLI arguments are used, the Dockerfile MUST define an `ENTRYPOINT` rather than `CMD` alone, so that arguments can be appended cleanly at runtime:
+
+```dockerfile
+ENTRYPOINT ["python", "src/main.py"]
+CMD ["--help"]
+```
+
+- Default argument values SHOULD be defined in the script, not hardcoded in the Dockerfile
+- Sensitive values (e.g. passwords, tokens) MUST NOT be passed as CLI arguments as they will be visible in process listings; use environment variables or config files instead
+
+---
+
+## 13. Multi-Script / Modular Structure
+
+- Applications consisting of more than one script MUST be organised as a Python package
+- The recommended project structure is:
+
+```
+project/
+├── Dockerfile
+├── .dockerignore
+├── requirements.txt
+├── config/
+│   └── config.yaml
+└── src/
+    ├── __init__.py
+    ├── main.py
+    └── modules/
+        ├── __init__.py
+        ├── module_a.py
+        └── module_b.py
+```
+
+- Each directory containing Python modules MUST include an `__init__.py` file
+- The `src/` directory MUST be copied into the container as a whole; individual script files MUST NOT be copied selectively
+- Inter-module imports MUST use relative or absolute package imports; direct file path imports MUST NOT be used
+- A single entry point script (e.g. `main.py`) SHOULD be responsible for invoking other modules; business logic SHOULD NOT live in `main.py` itself
+- `PYTHONPATH` MAY be set in the Dockerfile if the package structure requires it:
+
+```dockerfile
+ENV PYTHONPATH=/app
+```
+
+---
+
+## 14. Configuration Management
+
+- Application configuration MUST be stored in a configuration file using one of the following formats: YAML (`.yaml` / `.yml`), TOML (`.toml`), or JSON (`.json`)
+- YAML is the RECOMMENDED format for human-maintained configuration due to its readability
+- Configuration files MUST be stored in a dedicated `config/` directory within the project
+- A default configuration file SHOULD be included in the container image for reference and fallback:
+
+```dockerfile
+COPY config/ ./config/
+```
+
+- Environment-specific configuration (e.g. production vs. development) MUST be supplied at runtime by mounting a config file as a volume:
+
+```bash
+docker run --rm -v $(pwd)/config/prod.yaml:/app/config/config.yaml my-app:1.0
+```
+
+- Configuration files MUST NOT contain secrets, credentials, or API keys; these MUST be injected via environment variables at runtime and referenced within the config file using interpolation where the config library supports it
+- The following libraries are RECOMMENDED for loading configuration files:
+
+| Format | Recommended Library |
+|---|---|
+| YAML | `pyyaml` or `ruamel.yaml` |
+| TOML | `tomllib` (stdlib, Python 3.11+) or `tomli` |
+| JSON | `json` (stdlib) |
+
+- Configuration loading MUST fail fast with a clear error message if a required key is missing or the file cannot be found
+- A sample or template configuration file (e.g. `config.example.yaml`) SHOULD be included in the repository with all keys documented
+
+---
+
+## 15. Compliance Checklist
+
+Before publishing an image, the following MUST be verified:
+
+- [ ] Base image pinned to Python 3.10+, non-`latest` tag
+- [ ] All dependencies pinned to exact versions
+- [ ] `PYTHONUNBUFFERED` and `PYTHONDONTWRITEBYTECODE` set
+- [ ] Non-root user defined and active
+- [ ] No secrets present in the image or config files
+- [ ] `.dockerignore` present and complete
+- [ ] Image tagged with a semantic version
+- [ ] CLI arguments defined using `argparse`, `click`, or `typer` where applicable
+- [ ] `ENTRYPOINT` used in Dockerfile where CLI arguments are required
+- [ ] Application organised as a Python package with `__init__.py` files
+- [ ] Single entry point script defined; business logic in separate modules
+- [ ] Configuration stored in `config/` directory in YAML, TOML, or JSON format
+- [ ] No secrets in configuration files
+- [ ] Sample/template config file included and documented
+- [ ] Environment-specific config supplied at runtime via volume mount

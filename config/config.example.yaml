@@ -1,0 +1,14 @@
+# Example configuration file — copy to config.yaml and adjust values.
+# Secrets and credentials MUST NOT be stored here; inject them via environment variables at runtime.
+
+app:
+  # Display name of the application
+  name: my-app
+  # Semantic version of the application
+  version: "1.0.0"
+  # Log verbosity level: DEBUG, INFO, WARNING, ERROR
+  log_level: INFO
+
+processing:
+  # Character encoding used when reading/writing files
+  default_encoding: utf-8
