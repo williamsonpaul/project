@@ -1,4 +1,4 @@
-from unittest.mock import patch
+from unittest.mock import mock_open, patch
 
 import pytest
 
@@ -21,6 +21,18 @@ class TestLoadConfig:
         defaults = config["defaults"]
         assert "min_healthy_percentage" in defaults
         assert "max_healthy_percentage" in defaults
+
+    @patch("builtins.open", side_effect=FileNotFoundError)
+    def test_load_config_missing_file_exits_1(self, _mock):
+        with pytest.raises(SystemExit) as exc:
+            load_config()
+        assert exc.value.code == 1
+
+    @patch("builtins.open", mock_open(read_data="key: [unclosed"))
+    def test_load_config_malformed_yaml_exits_1(self):
+        with pytest.raises(SystemExit) as exc:
+            load_config()
+        assert exc.value.code == 1
 
 
 class TestMain:

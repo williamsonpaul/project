@@ -1,18 +1,41 @@
 import argparse
+import json
 import os
 import sys
+from datetime import datetime, timezone
 
 import yaml
 
 from src.modules import refresh_start, refresh_monitor
 
 
+def _log_startup_error(message):
+    print(
+        json.dumps(
+            {
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "level": "ERROR",
+                "command": "startup",
+                "message": message,
+            }
+        ),
+        file=sys.stderr,
+    )
+
+
 def load_config():
     config_path = os.path.abspath(
         os.path.join(os.path.dirname(__file__), "../config/config.yaml")
     )
-    with open(config_path) as f:
-        return yaml.safe_load(f)
+    try:
+        with open(config_path) as f:
+            return yaml.safe_load(f)
+    except FileNotFoundError:
+        _log_startup_error(f"Configuration file not found: {config_path}")
+        sys.exit(1)
+    except yaml.YAMLError as e:
+        _log_startup_error(f"Configuration file is malformed: {e}")
+        sys.exit(1)
 
 
 def main():
